@@ -1,0 +1,85 @@
+name: Gerar app (IPA)
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: PrismaTV
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar XcodeGen
+        run: brew install xcodegen
+
+      - name: Gerar projeto Xcode
+        run: xcodegen generate
+
+      - name: Instalar VLCKit (CocoaPods)
+        run: pod install --repo-update
+
+      - name: Compilar
+        run: |
+          set +e
+          xcodebuild \
+            -workspace PrismaTV.xcworkspace \
+            -scheme PrismaTV \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build > build.log 2>&1
+          status=$?
+          grep -E "error:|BUILD (SUCCEEDED|FAILED)" build.log
+          if [ $status -ne 0 ]; then
+            tail -n 150 build.log
+            exit $status
+          fi
+
+      - name: Empacotar IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/PrismaTV.app Payload/
+          zip -qry PrismaTV.ipa Payload
+          ls -lh PrismaTV.ipa
+
+      - name: Publicar IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: PrismaTV-ipa
+          path: PrismaTV/PrismaTV.ipa
+          retention-days: 30
+
+      - name: Compilar versão de simulador (para testar no navegador do PC)
+        continue-on-error: true
+        run: |
+          set +e
+          xcodebuild \
+            -workspace PrismaTV.xcworkspace \
+            -scheme PrismaTV \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build-sim \
+            CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=NO \
+            build > sim.log 2>&1
+          status=$?
+          grep -E "error:|BUILD (SUCCEEDED|FAILED)" sim.log
+          if [ $status -ne 0 ]; then tail -n 100 sim.log; exit $status; fi
+          cd build-sim/Build/Products/Release-iphonesimulator
+          zip -qry "$GITHUB_WORKSPACE/PrismaTV/PrismaTV-simulador.zip" PrismaTV.app
+          ls -lh "$GITHUB_WORKSPACE/PrismaTV/PrismaTV-simulador.zip"
+
+      - name: Publicar versão de simulador
+        if: hashFiles('PrismaTV/PrismaTV-simulador.zip') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: PrismaTV-simulador
+          path: PrismaTV/PrismaTV-simulador.zip
+          retention-days: 30
