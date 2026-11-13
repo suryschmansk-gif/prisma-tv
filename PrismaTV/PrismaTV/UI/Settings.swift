@@ -60,6 +60,8 @@ struct SettingsView: View {
 
                 Section {
                     Button("Sair da conta", role: .destructive) { confirmLogout = true }
+                } footer: {
+                    CreditFooter().padding(.top, 12)
                 }
             }
             .scrollContentBackground(.hidden)

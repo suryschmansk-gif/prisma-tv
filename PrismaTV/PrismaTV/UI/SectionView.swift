@@ -96,6 +96,7 @@ struct SectionView: View {
                         PosterRow(title: isSeries ? "Séries atualizadas" : "Adicionados recentemente", items: recentItems).reveal()
 
                         catalogSection
+                        CreditFooter()
                     }
                     .padding(.bottom, 24)
                 }

@@ -84,6 +84,7 @@ struct LiveView: View {
                             .padding(.horizontal)
                             .reveal()
                     }
+                    CreditFooter()
                 }
                 .padding(.bottom, 20)
             }

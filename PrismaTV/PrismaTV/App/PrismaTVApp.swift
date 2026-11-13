@@ -90,6 +90,14 @@ struct SplashView: View {
                     .opacity(step > 1 ? 1 : 0)
                     .offset(y: step > 1 ? 0 : 12)
             }
+            VStack {
+                Spacer()
+                Text("Desenvolvido por Caio S L Torres")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.4))
+                    .opacity(step > 1 ? 1 : 0)
+                    .padding(.bottom, 28)
+            }
         }
         .onAppear {
             withAnimation(.spring(response: 0.7, dampingFraction: 0.7)) { step = 1 }

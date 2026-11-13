@@ -95,6 +95,7 @@ struct LoginView: View {
                     .font(.caption)
                     .foregroundStyle(Theme.muted)
                     .multilineTextAlignment(.center)
+                CreditFooter()
             }
             .padding(24)
             .frame(maxWidth: 520)

@@ -1,5 +1,8 @@
 # Prisma TV: passo a passo completo (usando um PC com Windows)
 
+Desenvolvido por Caio S L Torres.
+
+
 Você vai fazer três coisas:
 
 1. Colocar o código no **GitHub**, que compila o app de graça numa máquina Mac na nuvem.
@@ -91,3 +94,29 @@ Quando eu te mandar uma versão nova:
 | "Usuário ou senha incorretos" | Confira o servidor com a porta, por exemplo `http://dominio.com:8080` |
 | Canal não abre ou fica travando | Toque no ícone de conta → Formato da TV ao vivo → troque para HLS |
 | A compilação deu ❌ | Me mande as linhas com `error:` |
+
+---
+
+## Android (celular, tablet, TV Box e Fire Stick)
+
+O app Android fica na pasta `android`. O GitHub compila numa máquina Linux, que é grátis mesmo em repositório privado.
+
+1. Na raiz do repositório, crie o arquivo `.github/workflows/android.yml` (Adicionar arquivo → Criar novo arquivo) e cole o conteúdo do `android-raiz.yml`.
+2. Em **Ações**, espere a tarefa **"Gerar app Android (APK)"** ficar ✅ (uns 10 minutos).
+3. Baixe o **PrismaTV-android** em *Artifacts* e descompacte. Dentro dele está o `PrismaTV.apk`.
+
+**Instalar no celular ou tablet:** mande o `PrismaTV.apk` para o aparelho (WhatsApp, Google Drive ou cabo), toque nele e permita "instalar apps desconhecidos" quando o Android pedir.
+
+**Instalar na TV Box ou Fire Stick:**
+1. Instale o app **Downloader** (da AFTVnews) pela loja da TV.
+2. No Fire Stick, ative *Configurações → Minha Fire TV → Opções do desenvolvedor → Instalar apps desconhecidos* para o Downloader.
+3. Suba o APK no Google Drive ou Dropbox, gere um link de download e abra esse link no Downloader.
+4. O Prisma TV aparece junto com os outros apps da TV.
+
+Na TV, o controle remoto funciona assim:
+- **OK** pausa ou continua.
+- **◀ ▶** voltam ou avançam 10 segundos.
+- **▲ ▼** trocam de canal na TV ao vivo.
+- **Voltar** fecha os controles ou o player.
+
+O APK não expira. Para atualizar, é só instalar o novo por cima: seu progresso e seus favoritos continuam salvos.

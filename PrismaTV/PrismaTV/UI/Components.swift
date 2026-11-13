@@ -596,3 +596,14 @@ struct DetailRouter: View {
         }
     }
 }
+
+/// Crédito do desenvolvedor, mostrado no fim das telas.
+struct CreditFooter: View {
+    var body: some View {
+        Text("Desenvolvido por Caio S L Torres")
+            .font(.system(size: 12))
+            .foregroundStyle(.white.opacity(0.4))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 18)
+    }
+}
