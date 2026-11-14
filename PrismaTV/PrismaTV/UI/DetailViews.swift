@@ -6,7 +6,7 @@ private struct FavoriteToolbarButton: View {
     var body: some View {
         let fav = favorites.contains(key)
         Button {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { favorites.toggle(key) }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { _ = favorites.toggle(key) }
         } label: {
             Image(systemName: fav ? "heart.fill" : "heart")
                 .font(.system(size: 16, weight: .semibold))

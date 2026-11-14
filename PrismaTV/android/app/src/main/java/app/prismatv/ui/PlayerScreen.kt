@@ -20,6 +20,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -766,7 +767,7 @@ private fun UnlockHint(onUnlocked: () -> Unit, onPressChanged: (Boolean) -> Unit
         Modifier
             .glass(CircleShape, dark = true)
             .pointerInput(Unit) {
-                androidx.compose.foundation.gestures.detectTapGestures(onPress = {
+                detectTapGestures(onPress = {
                     onPressChanged(true)
                     val job = scope.launch {
                         progress.animateTo(1f, androidx.compose.animation.core.tween(1000, easing = androidx.compose.animation.core.LinearEasing))
