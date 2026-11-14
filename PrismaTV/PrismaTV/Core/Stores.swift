@@ -119,22 +119,62 @@ final class ProgressStore: ObservableObject {
     }
 }
 
-// MARK: - Favoritos
+// MARK: - Listas: Favoritos, Quero ver, Já assisti
 
 @MainActor
 final class FavoritesStore: ObservableObject {
     @Published private(set) var keys: Set<String>
+    @Published private(set) var watchlist: Set<String>
+    @Published private(set) var watched: Set<String>
 
     init() {
-        keys = Set(UserDefaults.standard.stringArray(forKey: "favorites") ?? [])
+        let d = UserDefaults.standard
+        keys = Set(d.stringArray(forKey: "favorites") ?? [])
+        watchlist = Set(d.stringArray(forKey: "watchlist") ?? [])
+        watched = Set(d.stringArray(forKey: "watched") ?? [])
     }
 
     func contains(_ key: String) -> Bool { keys.contains(key) }
+    func inWatchlist(_ key: String) -> Bool { watchlist.contains(key) }
+    func isWatched(_ key: String) -> Bool { watched.contains(key) }
 
-    func toggle(_ key: String) {
+    @discardableResult
+    func toggle(_ key: String) -> Bool {
         if keys.contains(key) { keys.remove(key) } else { keys.insert(key) }
-        UserDefaults.standard.set(Array(keys), forKey: "favorites")
+        save()
+        return keys.contains(key)
     }
+
+    /// "Quero ver". Ao adicionar, tira de "Já assisti".
+    @discardableResult
+    func toggleWatchlist(_ key: String) -> Bool {
+        if watchlist.contains(key) { watchlist.remove(key) } else { watchlist.insert(key); watched.remove(key) }
+        save()
+        return watchlist.contains(key)
+    }
+
+    /// "Já assisti". Ao marcar, tira de "Quero ver".
+    @discardableResult
+    func toggleWatched(_ key: String) -> Bool {
+        if watched.contains(key) { watched.remove(key) } else { watched.insert(key); watchlist.remove(key) }
+        save()
+        return watched.contains(key)
+    }
+
+    private func save() {
+        let d = UserDefaults.standard
+        d.set(Array(keys), forKey: "favorites")
+        d.set(Array(watchlist), forKey: "watchlist")
+        d.set(Array(watched), forKey: "watched")
+    }
+}
+
+// MARK: - Aviso rápido (toast)
+
+struct Toast: Identifiable, Equatable {
+    let id = UUID()
+    let icon: String
+    let text: String
 }
 
 // MARK: - Guia de programação (EPG)
@@ -256,6 +296,7 @@ final class Library: ObservableObject {
     @Published private(set) var lastUpdated: Date?
     @Published private(set) var isRefreshing = false
     @Published var player: PlayerRequest?
+    @Published var toast: Toast?
 
     let progress: ProgressStore
     let favorites: FavoritesStore
@@ -278,6 +319,17 @@ final class Library: ObservableObject {
     var failureMessage: String? {
         if case .failed(let msg) = state { return msg }
         return nil
+    }
+
+    func showToast(_ icon: String, _ text: String) {
+        let t = Toast(icon: icon, text: text)
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { toast = t }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_200_000_000)
+            if self.toast?.id == t.id {
+                withAnimation(.easeInOut(duration: 0.3)) { self.toast = nil }
+            }
+        }
     }
 
     // MARK: Login / logout
@@ -370,7 +422,7 @@ final class Library: ObservableObject {
     // MARK: Reprodução
 
     func liveURL(_ channel: LiveChannel) -> URL? {
-        let preferred = UserDefaults.standard.string(forKey: "liveFormat") ?? "ts"
+        let preferred = UserDefaults.standard.string(forKey: "liveFormat") ?? "m3u8"
         var format = preferred
         if let allowed = userInfo?.allowedFormats, !allowed.isEmpty, !allowed.contains(preferred) {
             format = allowed.contains("m3u8") ? "m3u8" : (allowed.first ?? preferred)

@@ -3,6 +3,7 @@ import Foundation
 enum XtreamError: LocalizedError {
     case badURL
     case unauthorized
+    case blocked(Int)
     case expired
     case http(Int)
     case notJSON
@@ -11,7 +12,8 @@ enum XtreamError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .badURL: return "Endereço do servidor inválido. Confira se está no formato http://dominio.com:porta"
-        case .unauthorized: return "Usuário ou senha incorretos."
+        case .unauthorized: return "Usuário ou senha incorretos. Confira se digitou igual ao outro app."
+        case .blocked(let code): return "O servidor recusou a conexão (erro \(code)). Alguns provedores bloqueiam acessos de fora do Brasil, de VPN ou de servidores na nuvem (como o Appetize). No seu celular, na internet de casa, deve funcionar."
         case .expired: return "Sua assinatura parece estar expirada ou desativada."
         case .http(let code): return "O servidor respondeu com erro \(code)."
         case .notJSON: return "O servidor não respondeu como um painel Xtream Codes. Confira o endereço e a porta."
@@ -27,7 +29,7 @@ struct XtreamAPI: Sendable {
         let cfg = URLSessionConfiguration.default
         cfg.timeoutIntervalForRequest = 60
         cfg.timeoutIntervalForResource = 600
-        cfg.httpAdditionalHeaders = ["User-Agent": "PrismaTV/1.0 (iOS)"]
+        cfg.httpAdditionalHeaders = ["User-Agent": "VLC/3.0.20 LibVLC/3.0.20"]
         cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
         return URLSession(configuration: cfg)
     }()
@@ -75,7 +77,7 @@ struct XtreamAPI: Sendable {
             throw XtreamError.network(error.localizedDescription)
         }
         if let http = result.1 as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            if http.statusCode == 401 || http.statusCode == 403 { throw XtreamError.unauthorized }
+            if http.statusCode == 401 || http.statusCode == 403 || http.statusCode == 451 { throw XtreamError.blocked(http.statusCode) }
             throw XtreamError.http(http.statusCode)
         }
         return result.0

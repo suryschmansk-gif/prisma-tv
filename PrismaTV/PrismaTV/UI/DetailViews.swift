@@ -113,6 +113,7 @@ struct MovieDetailView: View {
                     } else {
                         PrimaryButton(title: "Assistir") { lib.playMovie(item, ext: info?.ext, resume: false) }
                     }
+                    ListButtons(key: item.favKey)
 
                     let genres = TextUtil.genres(info?.genre).isEmpty ? item.genres : TextUtil.genres(info?.genre)
                     GenreChips(genres: genres)
@@ -188,6 +189,7 @@ struct SeriesDetailView: View {
                             }
                         }
                     }
+                    ListButtons(key: item.favKey)
 
                     let genres = TextUtil.genres(info?.genre).isEmpty ? item.genres : TextUtil.genres(info?.genre)
                     GenreChips(genres: genres)

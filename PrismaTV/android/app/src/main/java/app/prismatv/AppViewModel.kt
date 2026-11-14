@@ -24,6 +24,10 @@ object Prefs {
     fun saveAccount(c: Context, a: Account?) = sp(c).edit().putString("account", a?.toJson()).apply()
     fun favorites(c: Context): Set<String> = sp(c).getStringSet("favorites", emptySet())?.toSet() ?: emptySet()
     fun saveFavorites(c: Context, s: Set<String>) = sp(c).edit().putStringSet("favorites", s).apply()
+    fun watchlist(c: Context): Set<String> = sp(c).getStringSet("watchlist", emptySet())?.toSet() ?: emptySet()
+    fun saveWatchlist(c: Context, s: Set<String>) = sp(c).edit().putStringSet("watchlist", s).apply()
+    fun watched(c: Context): Set<String> = sp(c).getStringSet("watched", emptySet())?.toSet() ?: emptySet()
+    fun saveWatched(c: Context, s: Set<String>) = sp(c).edit().putStringSet("watched", s).apply()
     fun tapSounds(c: Context) = sp(c).getBoolean("tapSounds", true)
     fun setTapSounds(c: Context, v: Boolean) = sp(c).edit().putBoolean("tapSounds", v).apply()
     fun liveFormat(c: Context) = sp(c).getString("liveFormat", "ts") ?: "ts"
@@ -106,6 +110,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var player by mutableStateOf<PlayerRequest?>(null)
     var favorites by mutableStateOf(Prefs.favorites(app))
         private set
+    var watchlist by mutableStateOf(Prefs.watchlist(app))
+        private set
+    var watched by mutableStateOf(Prefs.watched(app))
+        private set
+    var toast by mutableStateOf<Pair<Long, String>?>(null)
+        private set
+    /** Item cujo menu de listas (segurar a capa) está aberto. */
+    var listMenu by mutableStateOf<MediaItem?>(null)
+    /** true enquanto o vídeo está na telinha flutuante. */
+    var inPip by mutableStateOf(false)
     var tapSounds by mutableStateOf(Prefs.tapSounds(app))
         private set
     var liveFormat by mutableStateOf(Prefs.liveFormat(app))
@@ -204,8 +218,40 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun isFavorite(key: String) = key in favorites
     fun toggleFavorite(key: String) {
-        favorites = if (key in favorites) favorites - key else favorites + key
+        val adding = key !in favorites
+        favorites = if (adding) favorites + key else favorites - key
         Prefs.saveFavorites(ctx, favorites)
+        showToast(if (adding) "♥  Adicionado a Favoritos" else "Removido de Favoritos")
+    }
+
+    fun inWatchlist(key: String) = key in watchlist
+    fun isWatched(key: String) = key in watched
+
+    /** "Quero ver". Ao adicionar, tira de "Já assisti". */
+    fun toggleWatchlist(key: String) {
+        val adding = key !in watchlist
+        watchlist = if (adding) watchlist + key else watchlist - key
+        if (adding) watched = watched - key
+        Prefs.saveWatchlist(ctx, watchlist); Prefs.saveWatched(ctx, watched)
+        showToast(if (adding) "Adicionado a Quero ver" else "Removido de Quero ver")
+    }
+
+    /** "Já assisti". Ao marcar, tira de "Quero ver". */
+    fun toggleWatched(key: String) {
+        val adding = key !in watched
+        watched = if (adding) watched + key else watched - key
+        if (adding) watchlist = watchlist - key
+        Prefs.saveWatchlist(ctx, watchlist); Prefs.saveWatched(ctx, watched)
+        showToast(if (adding) "✓  Marcado como assistido" else "Desmarcado como assistido")
+    }
+
+    fun showToast(text: String) {
+        val t = System.nanoTime() to text
+        toast = t
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(2200)
+            if (toast?.first == t.first) toast = null
+        }
     }
 
     // ----- progresso -----

@@ -176,6 +176,7 @@ struct SectionView: View {
                     ForEach(results) { item in
                         NavigationLink(value: item) { PosterCard(item: item) }
                             .buttonStyle(.pressable)
+                            .listMenu(item)
                             .reveal()
                     }
                 }
@@ -244,14 +245,18 @@ struct HeroBanner: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            Color.clear
-                .frame(height: 470 + topInset * 0.3)
-                .overlay(
-                    CachedImage(url: item.backdrop ?? item.poster, maxWidth: 1000)
-                        .scaleEffect(zoom ? 1.12 : 1.0)
-                        .animation(.easeInOut(duration: 18).repeatForever(autoreverses: true), value: zoom)
-                )
-                .clipped()
+            // Imagem "elástica": estica ao puxar para baixo e sobe mais devagar ao rolar (parallax)
+            GeometryReader { geo in
+                let minY = geo.frame(in: .global).minY
+                CachedImage(url: item.backdrop ?? item.poster, maxWidth: 1000)
+                    .scaleEffect(zoom ? 1.12 : 1.0)
+                    .animation(.easeInOut(duration: 18).repeatForever(autoreverses: true), value: zoom)
+                    .frame(width: geo.size.width, height: geo.size.height + max(0, minY))
+                    .clipped()
+                    .offset(y: minY > 0 ? -minY : -minY * 0.35)
+            }
+            .frame(height: 470 + topInset * 0.3)
+            .mask(Rectangle().padding(.top, -2000))
 
             LinearGradient(stops: [
                 .init(color: Theme.bg.opacity(0.45), location: 0),

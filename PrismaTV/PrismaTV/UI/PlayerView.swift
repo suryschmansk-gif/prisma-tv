@@ -1,182 +1,5 @@
 import SwiftUI
 import UIKit
-import MobileVLCKit
-
-// MARK: - Controlador do VLC
-
-struct MediaTrack: Identifiable, Hashable {
-    let id: Int32
-    let name: String
-}
-
-final class VLCPlayerController: ObservableObject {
-    let player = VLCMediaPlayer()
-
-    @Published var isPlaying = false
-    @Published var isBuffering = true
-    @Published var current: Double = 0
-    @Published var duration: Double = 0
-    @Published var ended = false
-    @Published var failed = false
-    @Published var audioTracks: [MediaTrack] = []
-    @Published var subtitleTracks: [MediaTrack] = []
-    @Published var currentAudio: Int32 = -1
-    @Published var currentSubtitle: Int32 = -1
-    @Published var aspect: String = "Original"
-    @Published var rate: Float = 1
-
-    private var timer: Timer?
-    private var lastTime: Int32 = -1
-    private var stalledTicks = 0
-    private var wantsPlay = true
-    private var tickCount = 0
-
-    func load(_ url: URL, startAt: Double) {
-        ended = false
-        failed = false
-        isBuffering = true
-        current = startAt
-        duration = 0
-        lastTime = -1
-        stalledTicks = 0
-        audioTracks = []
-        subtitleTracks = []
-        let media = VLCMedia(url: url)
-        media.addOption(":network-caching=2000")
-        media.addOption(":http-reconnect")
-        if startAt > 5 { media.addOption(":start-time=\(Int(startAt))") }
-        player.media = media
-        wantsPlay = true
-        player.play()
-        startTimer()
-    }
-
-    func stop() {
-        timer?.invalidate()
-        timer = nil
-        wantsPlay = false
-        player.stop()
-    }
-
-    func togglePlay() {
-        if player.isPlaying {
-            wantsPlay = false
-            player.pause()
-        } else {
-            wantsPlay = true
-            player.play()
-        }
-        isPlaying.toggle()
-    }
-
-    func seek(to seconds: Double) {
-        guard duration > 0 else { return }
-        player.position = Float(min(max(0, seconds / duration), 0.999))
-        current = seconds
-        ended = false
-    }
-
-    func jump(_ seconds: Int32) {
-        if seconds > 0 { player.jumpForward(seconds) } else { player.jumpBackward(-seconds) }
-        current = max(0, min(duration, current + Double(seconds)))
-    }
-
-    func setRate(_ r: Float) {
-        rate = r
-        player.rate = r
-    }
-
-    /// 0...1 → volume do VLC (0...100)
-    func setVolume(_ v: Double) {
-        player.audio?.volume = Int32(max(0, min(1, v)) * 100)
-    }
-
-    func selectAudio(_ id: Int32) {
-        player.currentAudioTrackIndex = id
-        currentAudio = id
-    }
-
-    func selectSubtitle(_ id: Int32) {
-        player.currentVideoSubTitleIndex = id
-        currentSubtitle = id
-    }
-
-    func setAspect(_ name: String, ratio: String?) {
-        aspect = name
-        if let ratio {
-            player.videoAspectRatio = strdup(ratio)
-        } else {
-            player.videoAspectRatio = nil
-        }
-    }
-
-    private func startTimer() {
-        timer?.invalidate()
-        let t = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in self?.tick() }
-        RunLoop.main.add(t, forMode: .common)
-        timer = t
-    }
-
-    private func tick() {
-        tickCount += 1
-        let ms = player.time.intValue
-        let len = player.media?.length.intValue ?? 0
-        if ms > 0 { current = Double(ms) / 1000 }
-        if len > 0 { duration = Double(len) / 1000 }
-        isPlaying = player.isPlaying
-        if player.isPlaying && abs(player.rate - rate) > 0.01 { player.rate = rate }
-
-        switch player.state {
-        case .error:
-            failed = true
-            isBuffering = false
-        case .ended:
-            ended = true
-            isBuffering = false
-        case .opening:
-            isBuffering = true
-        default:
-            if ms == lastTime && wantsPlay && player.state != .paused { stalledTicks += 1 } else { stalledTicks = 0 }
-            isBuffering = wantsPlay && (stalledTicks >= 2 || ms <= 0)
-        }
-        lastTime = ms
-
-        if tickCount % 4 == 0 { refreshTracks() }
-    }
-
-    private func refreshTracks() {
-        let aNames = (player.audioTrackNames as? [String]) ?? []
-        let aIdx = (player.audioTrackIndexes as? [NSNumber]) ?? []
-        let audio = zip(aIdx, aNames).map { MediaTrack(id: $0.int32Value, name: $1) }
-        if audio != audioTracks { audioTracks = audio }
-
-        let sNames = (player.videoSubTitlesNames as? [String]) ?? []
-        let sIdx = (player.videoSubTitlesIndexes as? [NSNumber]) ?? []
-        let subs = zip(sIdx, sNames).map { MediaTrack(id: $0.int32Value, name: $1) }
-        if subs != subtitleTracks { subtitleTracks = subs }
-
-        currentAudio = player.currentAudioTrackIndex
-        currentSubtitle = player.currentVideoSubTitleIndex
-    }
-
-    deinit {
-        timer?.invalidate()
-        player.stop()
-    }
-}
-
-struct VLCVideoView: UIViewRepresentable {
-    let controller: VLCPlayerController
-
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        view.backgroundColor = .black
-        controller.player.drawable = view
-        return view
-    }
-
-    func updateUIView(_ uiView: UIView, context: Context) {}
-}
 
 // MARK: - Controles reutilizáveis
 
@@ -271,7 +94,7 @@ struct PlayerView: View {
     @EnvironmentObject private var favorites: FavoritesStore
     @EnvironmentObject private var epg: EPGStore
 
-    @StateObject private var c = VLCPlayerController()
+    @StateObject private var c = PlaybackController()
     @State private var active: PlayerRequest
     @State private var channelIndex: Int
     @State private var showControls = true
@@ -287,6 +110,10 @@ struct PlayerView: View {
     @State private var countdown: Int?
     @State private var countdownTask: Task<Void, Never>?
     @State private var nextCancelled = false
+    @State private var locked = false
+    @State private var showUnlockHint = false
+    @State private var unlockProgress: CGFloat = 0
+    @State private var hintTask: Task<Void, Never>?
 
     init(request: PlayerRequest) {
         self.request = request
@@ -344,7 +171,7 @@ struct PlayerView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            VLCVideoView(controller: c)
+            PlayerSurface(controller: c)
                 .ignoresSafeArea()
 
             Color.clear
@@ -361,11 +188,11 @@ struct PlayerView: View {
                     .transition(.opacity)
             }
 
-            if showControls && !c.failed && !showEpisodes && countdown == nil {
+            if showControls && !locked && !c.failed && !showEpisodes && countdown == nil {
                 controls.transition(.opacity)
             }
 
-            if showSkipIntro && countdown == nil {
+            if showSkipIntro && countdown == nil && !locked {
                 VStack {
                     Spacer()
                     HStack {
@@ -399,12 +226,19 @@ struct PlayerView: View {
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
 
-            if let countdown, let next = ctx?.next {
+            if locked && showUnlockHint {
+                unlockHint
+                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+            }
+
+            if let countdown, let next = ctx?.next, !locked {
                 nextCard(next: next, seconds: countdown)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .animation(.easeInOut(duration: 0.25), value: showControls)
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: showUnlockHint)
+        .animation(.easeInOut(duration: 0.25), value: locked)
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: showEpisodes)
         .animation(.easeInOut(duration: 0.25), value: countdown)
         .animation(.easeInOut(duration: 0.25), value: showSkipIntro)
@@ -501,6 +335,12 @@ struct PlayerView: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 12).padding(.vertical, 7)
                 .background(Color.red.opacity(0.9), in: Capsule())
+            }
+            GlassCircleButton(icon: "lock.fill", label: "Travar a tela contra toques") { lock() }
+            if c.pipPossible {
+                GlassCircleButton(icon: "pip.enter", label: "Abrir telinha flutuante") {
+                    c.startPiP()
+                }
             }
             if let key = active.favKey {
                 let fav = favorites.contains(key)
@@ -623,8 +463,8 @@ struct PlayerView: View {
                 }
 
                 Menu {
-                    ForEach(aspectOptions) { opt in
-                        Button { c.setAspect(opt.name, ratio: opt.ratio); scheduleHide() } label: {
+                    ForEach(c.aspectOptions) { opt in
+                        Button { c.setAspect(opt); scheduleHide() } label: {
                             if opt.name == c.aspect { Label(opt.name, systemImage: "checkmark") } else { Text(opt.name) }
                         }
                     }
@@ -665,21 +505,6 @@ struct PlayerView: View {
         .task(id: channelIndex) {
             if let ch = currentChannel { await epg.load(ch) }
         }
-    }
-
-    private struct AspectOption: Identifiable {
-        let name: String
-        let ratio: String?
-        var id: String { name }
-    }
-
-    private var aspectOptions: [AspectOption] {
-        let b = UIScreen.main.bounds
-        let w = Int(max(b.width, b.height)), h = Int(min(b.width, b.height))
-        return [AspectOption(name: "Original", ratio: nil),
-                AspectOption(name: "Preencher a tela", ratio: "\(w):\(h)"),
-                AspectOption(name: "16:9", ratio: "16:9"),
-                AspectOption(name: "4:3", ratio: "4:3")]
     }
 
     private func rateLabel(_ r: Float) -> String {
@@ -885,11 +710,79 @@ struct PlayerView: View {
     // MARK: Ações
 
     private func toggleControls() {
+        if locked { flashUnlockHint(); return }
         showControls.toggle()
         if showControls { scheduleHide() }
     }
 
+    // MARK: Trava de tela
+
+    private var unlockHint: some View {
+        VStack {
+            Spacer()
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle().stroke(Color.white.opacity(0.25), lineWidth: 3)
+                    Circle()
+                        .trim(from: 0, to: unlockProgress)
+                        .stroke(Theme.accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    Image(systemName: unlockProgress >= 1 ? "lock.open.fill" : "lock.fill")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Tela travada").font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
+                    Text("Segure aqui para desbloquear").font(.system(size: 12)).foregroundStyle(.white.opacity(0.75))
+                }
+            }
+            .padding(.horizontal, 18).padding(.vertical, 12)
+            .glass(Capsule(), dark: true)
+            .scaleEffect(unlockProgress > 0 ? 1.05 : 1)
+            .onLongPressGesture(minimumDuration: 1.0, maximumDistance: 40, pressing: { pressing in
+                hintTask?.cancel()
+                withAnimation(pressing ? .linear(duration: 1.0) : .easeOut(duration: 0.2)) {
+                    unlockProgress = pressing ? 1 : 0
+                }
+                if !pressing { flashUnlockHint() }
+            }, perform: { unlock() })
+            .accessibilityLabel("Tela travada. Toque duas vezes e segure para desbloquear.")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { unlock() }
+            .padding(.bottom, 40)
+        }
+    }
+
+    private func lock() {
+        hideTask?.cancel()
+        locked = true
+        showControls = false
+        showEpisodes = false
+        flashUnlockHint()
+    }
+
+    private func unlock() {
+        hintTask?.cancel()
+        Feedback.tap()
+        locked = false
+        unlockProgress = 0
+        showUnlockHint = false
+        scheduleHide()
+    }
+
+    private func flashUnlockHint() {
+        showUnlockHint = true
+        hintTask?.cancel()
+        hintTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled, unlockProgress == 0 else { return }
+            showUnlockHint = false
+        }
+    }
+
     private func scheduleHide() {
+        if locked { return }
         hideTask?.cancel()
         showControls = true
         hideTask = Task { @MainActor in

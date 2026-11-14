@@ -3,6 +3,7 @@ package app.prismatv.ui
 import android.content.pm.PackageManager
 import android.view.SoundEffectConstants
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -26,11 +27,17 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
@@ -67,6 +74,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.prismatv.AppViewModel
 import app.prismatv.MediaItem
 import app.prismatv.TextUtil
 import app.prismatv.WatchEntry
@@ -182,7 +190,25 @@ fun Modifier.glass(shape: Shape, dark: Boolean = false): Modifier =
 
 @Composable
 fun Artwork(url: String?, placeholder: String, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop) {
-    Box(modifier.background(Brush.linearGradient(listOf(P.Surface2, P.Surface))), contentAlignment = Alignment.Center) {
+    val shimmer by androidx.compose.animation.core.rememberInfiniteTransition(label = "shimmer").animateFloat(
+        initialValue = -1f, targetValue = 2f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(tween(1300)), label = "s",
+    )
+    Box(
+        modifier
+            .background(Brush.linearGradient(listOf(P.Surface2, P.Surface)))
+            .then(
+                if (url.isNullOrBlank()) Modifier
+                else Modifier.background(
+                    Brush.linearGradient(
+                        listOf(Color.Transparent, Color.White.copy(alpha = 0.08f), Color.Transparent),
+                        start = androidx.compose.ui.geometry.Offset(shimmer * 400f, 0f),
+                        end = androidx.compose.ui.geometry.Offset(shimmer * 400f + 300f, 300f),
+                    ),
+                ),
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
         if (placeholder.isNotEmpty()) {
             Text(
                 placeholder, color = Color.White.copy(alpha = 0.5f), fontSize = 13.sp, fontWeight = FontWeight.Bold,
@@ -198,16 +224,22 @@ fun Artwork(url: String?, placeholder: String, modifier: Modifier = Modifier, co
 @Composable
 fun ProgressBar(fraction: Float, modifier: Modifier = Modifier, height: Dp = 4.dp, rounded: Boolean = true) {
     val shape = if (rounded) RoundedCornerShape(height / 2) else RoundedCornerShape(0.dp)
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { shown = true }
+    val animated by animateFloatAsState(if (shown) fraction.coerceIn(0f, 1f) else 0f, tween(800, 150), label = "progress")
     Box(modifier.height(height).clip(shape).background(Color.White.copy(alpha = 0.14f))) {
-        Box(Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).height(height).background(P.ProgressBrush))
+        Box(Modifier.fillMaxWidth(animated).height(height).background(P.ProgressBrush))
     }
 }
 
 @Composable
-fun PosterCard(item: MediaItem, isFavorite: Boolean, width: Dp?, onClick: () -> Unit) {
+fun PosterCard(item: MediaItem, vm: AppViewModel, width: Dp?, onClick: () -> Unit) {
     val mod = if (width != null) Modifier.width(width) else Modifier.fillMaxWidth()
+    val fav = item.key in vm.favorites
+    val later = item.key in vm.watchlist
+    val seen = item.key in vm.watched
     Column(mod, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Pressable(onClick = onClick, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+        Pressable(onClick = onClick, onLongClick = { vm.listMenu = item }, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
             Artwork(item.poster, item.title, Modifier.fillMaxWidth().aspectRatio(2f / 3f))
             TextUtil.rating(item.rating)?.let {
                 Text(
@@ -216,12 +248,20 @@ fun PosterCard(item: MediaItem, isFavorite: Boolean, width: Dp?, onClick: () -> 
                         .background(Color.Black.copy(alpha = 0.6f), CircleShape).padding(horizontal = 7.dp, vertical = 3.dp),
                 )
             }
-            if (isFavorite) {
-                Icon(
-                    Icons.Filled.Favorite, null, tint = P.Accent,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(7.dp)
-                        .background(Color.Black.copy(alpha = 0.6f), CircleShape).padding(5.dp).size(11.dp),
-                )
+            Column(Modifier.align(Alignment.TopEnd).padding(7.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (fav) Badge(Icons.Filled.Favorite)
+                if (later) Badge(Icons.Filled.Bookmark)
+            }
+            if (seen) {
+                Row(
+                    Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp).background(P.Accent, CircleShape)
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Filled.CheckCircle, null, tint = P.OnPrimary, modifier = Modifier.size(11.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Assistido", color = P.OnPrimary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
             }
             Box(Modifier.matchParentSize().border(1.dp, P.Hairline, RoundedCornerShape(14.dp)))
         }
@@ -231,6 +271,11 @@ fun PosterCard(item: MediaItem, isFavorite: Boolean, width: Dp?, onClick: () -> 
         )
         Text(item.meta, color = P.Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
+}
+
+@Composable
+private fun Badge(icon: ImageVector) {
+    Icon(icon, null, tint = P.Accent, modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), CircleShape).padding(5.dp).size(11.dp))
 }
 
 @Composable
@@ -367,5 +412,67 @@ fun CreditFooter(modifier: Modifier = Modifier) {
     Text(
         P.CREDIT, color = Color.White.copy(alpha = 0.4f), fontSize = 12.sp, textAlign = TextAlign.Center,
         modifier = modifier.fillMaxWidth().padding(vertical = 18.dp),
+    )
+}
+
+
+// ---------- Listas: Favoritos, Quero ver, Já assisti ----------
+
+@Composable
+fun ListButtons(vm: AppViewModel, key: String, modifier: Modifier = Modifier) {
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        ListToggle("Favorito", Icons.Filled.FavoriteBorder, Icons.Filled.Favorite, key in vm.favorites, Modifier.weight(1f)) { vm.toggleFavorite(key) }
+        ListToggle("Quero ver", Icons.Filled.BookmarkBorder, Icons.Filled.Bookmark, key in vm.watchlist, Modifier.weight(1f)) { vm.toggleWatchlist(key) }
+        ListToggle("Já assisti", Icons.Filled.CheckCircleOutline, Icons.Filled.CheckCircle, key in vm.watched, Modifier.weight(1f)) { vm.toggleWatched(key) }
+    }
+}
+
+@Composable
+private fun ListToggle(title: String, icon: ImageVector, activeIcon: ImageVector, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    // "Pulo" do ícone sempre que muda
+    val pop = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(active) {
+        pop.snapTo(1.35f)
+        pop.animateTo(1f, androidx.compose.animation.core.spring(dampingRatio = 0.4f, stiffness = 300f))
+    }
+    Pressable(onClick = onClick, shape = RoundedCornerShape(14.dp), focusScale = 1.05f, modifier = modifier) {
+        Column(
+            Modifier.fillMaxWidth()
+                .background(if (active) P.Accent.copy(alpha = 0.14f) else Color.Transparent)
+                .glass(RoundedCornerShape(14.dp))
+                .padding(vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            val tint = if (active) P.Accent else Color.White
+            Icon(if (active) activeIcon else icon, null, tint = tint,
+                modifier = Modifier.size(21.dp).graphicsLayer { scaleX = pop.value; scaleY = pop.value; rotationZ = (pop.value - 1f) * -30f })
+            Text(title, color = tint, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+/** Menu que abre ao segurar uma capa. */
+@Composable
+fun ListMenuDialog(vm: AppViewModel) {
+    val item = vm.listMenu ?: return
+    androidx.compose.ui.window.Dialog(onDismissRequest = { vm.listMenu = null }) {
+        Column(
+            Modifier.widthIn(max = 420.dp).fillMaxWidth().background(P.Surface, RoundedCornerShape(24.dp))
+                .border(1.dp, P.Hairline, RoundedCornerShape(24.dp)).padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(item.title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(item.meta, color = P.Muted, fontSize = 13.sp)
+            ListButtons(vm, item.key)
+            GlassButton("Fechar", modifier = Modifier.fillMaxWidth()) { vm.listMenu = null }
+        }
+    }
+}
+
+@Composable
+fun ToastBanner(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+        modifier = modifier.glass(CircleShape, dark = true).padding(horizontal = 18.dp, vertical = 12.dp),
     )
 }

@@ -176,6 +176,7 @@ struct CachedImage: View {
                     .transition(.opacity)
             } else {
                 PlaceholderArt(text: placeholder)
+                    .shimmer(active: url != nil)
             }
         }
         .task(id: url) {
@@ -246,13 +247,21 @@ struct PosterCard: View {
                     }
                 }
                 .overlay(alignment: .topTrailing) {
-                    if favorites.contains(item.favKey) {
-                        Image(systemName: "heart.fill")
+                    VStack(spacing: 4) {
+                        if favorites.contains(item.favKey) { badge("heart.fill") }
+                        if favorites.inWatchlist(item.favKey) { badge("bookmark.fill") }
+                    }
+                    .padding(7)
+                }
+                .overlay(alignment: .bottom) {
+                    if favorites.isWatched(item.favKey) {
+                        Label("Assistido", systemImage: "checkmark.circle.fill")
                             .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Theme.accent)
-                            .padding(6)
-                            .background(.black.opacity(0.6), in: Circle())
-                            .padding(7)
+                            .foregroundStyle(Theme.onPrimary)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(Theme.accent, in: Capsule())
+                            .padding(.bottom, 8)
+                            .transition(.scale.combined(with: .opacity))
                     }
                 }
                 .shadow(color: .black.opacity(0.45), radius: 8, y: 5)
@@ -270,6 +279,15 @@ struct PosterCard: View {
                 .lineLimit(1)
         }
         .contentShape(Rectangle())
+    }
+
+    private func badge(_ icon: String) -> some View {
+        Image(systemName: icon)
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(Theme.accent)
+            .padding(6)
+            .background(.black.opacity(0.6), in: Circle())
+            .transition(.scale.combined(with: .opacity))
     }
 
     private var metaLine: String {
@@ -346,15 +364,18 @@ struct ProgressLine: View {
     let value: Double
     var height: CGFloat = 4
     var rounded = true
+    @State private var shown = false
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Rectangle().fill(.white.opacity(0.14))
-                Rectangle().fill(Theme.progress).frame(width: geo.size.width * CGFloat(min(1, max(0, value))))
+                Rectangle().fill(Theme.progress)
+                    .frame(width: geo.size.width * CGFloat(shown ? min(1, max(0, value)) : 0))
             }
             .clipShape(RoundedRectangle(cornerRadius: rounded ? height / 2 : 0))
         }
         .frame(height: height)
+        .onAppear { withAnimation(.easeOut(duration: 0.8).delay(0.15)) { shown = true } }
     }
 }
 
@@ -388,6 +409,7 @@ struct PosterRow: View {
                                 PosterCard(item: item).frame(width: sizeClass == .regular ? 150 : 118)
                             }
                             .buttonStyle(.pressable)
+                            .listMenu(item)
                         }
                     }
                     .padding(.horizontal)
@@ -423,6 +445,7 @@ struct TopRow: View {
                                 }
                             }
                             .buttonStyle(.pressable)
+                            .listMenu(item)
                         }
                     }
                     .padding(.horizontal)
@@ -605,5 +628,152 @@ struct CreditFooter: View {
             .foregroundStyle(.white.opacity(0.4))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 18)
+    }
+}
+
+
+// MARK: - Brilho animado enquanto a imagem carrega
+
+private struct Shimmer: ViewModifier {
+    let active: Bool
+    @State private var phase: CGFloat = -1
+    func body(content: Content) -> some View {
+        content.overlay {
+            if active {
+                GeometryReader { geo in
+                    LinearGradient(colors: [.clear, .white.opacity(0.10), .clear], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: geo.size.width * 0.8)
+                        .offset(x: phase * geo.size.width * 1.6)
+                        .blendMode(.plusLighter)
+                }
+                .clipped()
+                .onAppear {
+                    withAnimation(.linear(duration: 1.3).repeatForever(autoreverses: false)) { phase = 1 }
+                }
+            }
+        }
+    }
+}
+
+extension View {
+    func shimmer(active: Bool = true) -> some View { modifier(Shimmer(active: active)) }
+}
+
+// MARK: - Listas (Favoritos, Quero ver, Já assisti)
+
+@MainActor
+enum ListActions {
+    static func favorite(_ key: String, _ f: FavoritesStore, _ lib: Library) {
+        let on = f.toggle(key)
+        lib.showToast(on ? "heart.fill" : "heart.slash", on ? "Adicionado a Favoritos" : "Removido de Favoritos")
+    }
+
+    static func watchlist(_ key: String, _ f: FavoritesStore, _ lib: Library) {
+        let on = f.toggleWatchlist(key)
+        lib.showToast(on ? "bookmark.fill" : "bookmark.slash", on ? "Adicionado a Quero ver" : "Removido de Quero ver")
+    }
+
+    static func watched(_ key: String, _ f: FavoritesStore, _ lib: Library) {
+        let on = f.toggleWatched(key)
+        lib.showToast(on ? "checkmark.circle.fill" : "arrow.uturn.backward.circle", on ? "Marcado como assistido" : "Desmarcado como assistido")
+    }
+}
+
+/// Segurar o dedo numa capa abre este menu.
+private struct ListContextMenu: ViewModifier {
+    let item: MediaItem
+    @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var lib: Library
+
+    func body(content: Content) -> some View {
+        content.contextMenu {
+            Button { ListActions.favorite(item.favKey, favorites, lib) } label: {
+                Label(favorites.contains(item.favKey) ? "Remover de Favoritos" : "Adicionar a Favoritos",
+                      systemImage: favorites.contains(item.favKey) ? "heart.slash" : "heart")
+            }
+            Button { ListActions.watchlist(item.favKey, favorites, lib) } label: {
+                Label(favorites.inWatchlist(item.favKey) ? "Remover de Quero ver" : "Quero ver",
+                      systemImage: favorites.inWatchlist(item.favKey) ? "bookmark.slash" : "bookmark")
+            }
+            Button { ListActions.watched(item.favKey, favorites, lib) } label: {
+                Label(favorites.isWatched(item.favKey) ? "Desmarcar como assistido" : "Marcar como assistido",
+                      systemImage: favorites.isWatched(item.favKey) ? "arrow.uturn.backward.circle" : "checkmark.circle")
+            }
+        }
+    }
+}
+
+extension View {
+    func listMenu(_ item: MediaItem) -> some View { modifier(ListContextMenu(item: item)) }
+}
+
+/// Os três botões de lista da tela de detalhes, com animação de "pulo".
+struct ListButtons: View {
+    let key: String
+    @EnvironmentObject private var favorites: FavoritesStore
+    @EnvironmentObject private var lib: Library
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ListToggleButton(title: "Favorito", icon: "heart", activeIcon: "heart.fill", active: favorites.contains(key)) {
+                ListActions.favorite(key, favorites, lib)
+            }
+            ListToggleButton(title: "Quero ver", icon: "bookmark", activeIcon: "bookmark.fill", active: favorites.inWatchlist(key)) {
+                ListActions.watchlist(key, favorites, lib)
+            }
+            ListToggleButton(title: "Já assisti", icon: "checkmark.circle", activeIcon: "checkmark.circle.fill", active: favorites.isWatched(key)) {
+                ListActions.watched(key, favorites, lib)
+            }
+        }
+    }
+}
+
+private struct ListToggleButton: View {
+    let title: String
+    let icon: String
+    let activeIcon: String
+    let active: Bool
+    var action: () -> Void
+    @State private var pop = false
+
+    var body: some View {
+        Button {
+            pop = true
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.45)) { pop = false }
+            withAnimation(.easeInOut(duration: 0.2)) { action() }
+        } label: {
+            VStack(spacing: 6) {
+                Image(systemName: active ? activeIcon : icon)
+                    .font(.system(size: 19, weight: .semibold))
+                    .scaleEffect(pop ? 1.35 : 1)
+                    .rotationEffect(.degrees(pop ? -12 : 0))
+                Text(title).font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(active ? Theme.accent : .white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(active ? Theme.accent.opacity(0.14) : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .glass(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.pressable)
+        .accessibilityAddTraits(active ? .isSelected : [])
+    }
+}
+
+struct ToastView: View {
+    let toast: Toast
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: toast.icon)
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Theme.accent)
+            Text(toast.text)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 18).padding(.vertical, 12)
+        .glass(Capsule(), dark: true)
+        .shadow(color: .black.opacity(0.45), radius: 16, y: 8)
     }
 }

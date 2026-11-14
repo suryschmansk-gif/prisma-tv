@@ -53,7 +53,10 @@ import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.SkipNext
@@ -106,6 +109,7 @@ import app.prismatv.Kind
 import app.prismatv.PlayerRequest
 import app.prismatv.TextUtil
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
@@ -198,11 +202,16 @@ private fun Context.findActivity(): Activity? {
 // ---------- Tela do player ----------
 
 @Composable
-fun PlayerScreen(vm: AppViewModel, request: PlayerRequest) {
+fun PlayerScreen(vm: AppViewModel, request: PlayerRequest, onPip: () -> Unit = {}) {
     val context = LocalContext.current
     val view = LocalView.current
     val isTv = rememberIsTv()
     val c = remember(request.id) { VlcController(context) }
+    val pipSupported = remember {
+        android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
+            context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)
+    }
+    val inPip = vm.inPip
 
     var active by remember(request.id) { mutableStateOf(request) }
     var channelIndex by remember(request.id) { mutableIntStateOf(request.channelIndex) }
@@ -213,6 +222,9 @@ fun PlayerScreen(vm: AppViewModel, request: PlayerRequest) {
     var drawerSeason by remember { mutableStateOf<Int?>(null) }
     var countdown by remember { mutableStateOf<Int?>(null) }
     var nextCancelled by remember { mutableStateOf(false) }
+    var locked by remember { mutableStateOf(false) }
+    var showUnlockHint by remember { mutableStateOf(false) }
+    var hintTick by remember { mutableLongStateOf(0L) }
     var lastSaved by remember { mutableLongStateOf(0L) }
     var volume by remember { mutableFloatStateOf(1f) }
     var brightness by remember { mutableFloatStateOf(0.6f) }
@@ -222,7 +234,11 @@ fun PlayerScreen(vm: AppViewModel, request: PlayerRequest) {
     val ctx: EpisodeContext? = active.episode
     val currentChannel = active.channels.getOrNull(channelIndex)
 
-    fun poke() { lastInteraction = System.currentTimeMillis(); showControls = true }
+    fun flashHint() { showUnlockHint = true; hintTick = System.currentTimeMillis() }
+    fun poke() {
+        if (locked) { flashHint(); return }
+        lastInteraction = System.currentTimeMillis(); showControls = true
+    }
 
     fun save(force: Boolean) {
         val entry = active.progress ?: return
@@ -323,7 +339,14 @@ fun PlayerScreen(vm: AppViewModel, request: PlayerRequest) {
         active = active.copy(episode = EpisodeContext(series, info, ep))
     }
 
-    BackHandler {
+    // Esconde o aviso de "tela travada" depois de 3 s
+    LaunchedEffect(hintTick) {
+        if (showUnlockHint) { delay(3000); showUnlockHint = false }
+    }
+
+    BackHandler(enabled = locked) { flashHint() }
+
+    BackHandler(enabled = !locked) {
         when {
             showEpisodes -> showEpisodes = false
             isTv && showControls -> showControls = false
@@ -360,6 +383,7 @@ fun PlayerScreen(vm: AppViewModel, request: PlayerRequest) {
             .focusable()
             .onPreviewKeyEvent { ev ->
                 if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (locked) { flashHint(); return@onPreviewKeyEvent ev.key.nativeKeyCode != AndroidKeyEvent.KEYCODE_BACK }
                 when (ev.key.nativeKeyCode) {
                     AndroidKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, AndroidKeyEvent.KEYCODE_MEDIA_PLAY, AndroidKeyEvent.KEYCODE_MEDIA_PAUSE -> { c.toggle(); poke(); true }
                     AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { c.jump(30_000); poke(); true }
@@ -387,18 +411,18 @@ fun PlayerScreen(vm: AppViewModel, request: PlayerRequest) {
 
         Box(
             Modifier.fillMaxSize().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                if (showControls) showControls = false else poke()
+                if (locked) flashHint() else if (showControls) showControls = false else poke()
             },
         )
 
-        if (c.buffering && !c.failed && !c.ended) {
+        if (c.buffering && !c.failed && !c.ended && !inPip) {
             Box(Modifier.align(Alignment.Center).size(84.dp).glass(CircleShape), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp)
             }
         }
 
         AnimatedVisibility(
-            visible = showControls && !c.failed && !showEpisodes && countdown == null,
+            visible = showControls && !locked && !inPip && !c.failed && !showEpisodes && countdown == null,
             enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize(),
         ) {
             Box(Modifier.fillMaxSize()) {
@@ -435,6 +459,14 @@ fun PlayerScreen(vm: AppViewModel, request: PlayerRequest) {
                             Spacer(Modifier.width(6.dp))
                             Text("AO VIVO", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Black)
                         }
+                    }
+                    if (!isTv) {
+                        CircleGlassButton(Icons.Filled.Lock, "Travar a tela contra toques") {
+                            locked = true; showControls = false; showEpisodes = false; flashHint()
+                        }
+                    }
+                    if (pipSupported && !isTv) {
+                        CircleGlassButton(Icons.Filled.PictureInPictureAlt, "Abrir telinha flutuante") { onPip() }
                     }
                     active.favKey?.let { key ->
                         val fav = vm.isFavorite(key)
@@ -506,9 +538,21 @@ fun PlayerScreen(vm: AppViewModel, request: PlayerRequest) {
             }
         }
 
+        // Tela travada: segurar para desbloquear
+        AnimatedVisibility(
+            visible = locked && showUnlockHint && !inPip,
+            enter = fadeIn() + androidx.compose.animation.scaleIn(initialScale = 0.85f), exit = fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 40.dp),
+        ) {
+            UnlockHint(onUnlocked = {
+                locked = false; showUnlockHint = false
+                lastInteraction = System.currentTimeMillis(); showControls = true
+            }, onPressChanged = { pressing -> if (pressing) hintTick = Long.MAX_VALUE else flashHint() })
+        }
+
         // Pular abertura
         AnimatedVisibility(
-            visible = showSkip && countdown == null,
+            visible = showSkip && countdown == null && !inPip && !locked,
             enter = fadeIn() + slideInHorizontally { it / 2 }, exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = if (showControls) 128.dp else 28.dp),
         ) {
@@ -521,7 +565,7 @@ fun PlayerScreen(vm: AppViewModel, request: PlayerRequest) {
             }
         }
 
-        if (c.failed) {
+        if (c.failed && !inPip) {
             Column(
                 Modifier.align(Alignment.Center).widthIn(max = 420.dp).glass(RoundedCornerShape(24.dp), dark = true).padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -551,7 +595,7 @@ fun PlayerScreen(vm: AppViewModel, request: PlayerRequest) {
 
         // Próximo episódio
         AnimatedVisibility(
-            visible = countdown != null && ctx?.next != null,
+            visible = countdown != null && ctx?.next != null && !inPip && !locked,
             enter = fadeIn() + slideInVertically { it / 2 }, exit = fadeOut() + slideOutVertically { it / 2 },
             modifier = Modifier.align(Alignment.BottomEnd).padding(24.dp),
         ) {
@@ -708,6 +752,50 @@ private fun EpisodesDrawer(vm: AppViewModel, ctx: EpisodeContext, season: Int, c
                     }
                 }
             }
+        }
+    }
+}
+
+
+@Composable
+private fun UnlockHint(onUnlocked: () -> Unit, onPressChanged: (Boolean) -> Unit) {
+    val progress = remember { androidx.compose.animation.core.Animatable(0f) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val feedback = rememberFeedback()
+    Row(
+        Modifier
+            .glass(CircleShape, dark = true)
+            .pointerInput(Unit) {
+                androidx.compose.foundation.gestures.detectTapGestures(onPress = {
+                    onPressChanged(true)
+                    val job = scope.launch {
+                        progress.animateTo(1f, androidx.compose.animation.core.tween(1000, easing = androidx.compose.animation.core.LinearEasing))
+                        feedback()
+                        onUnlocked()
+                    }
+                    val released = tryAwaitRelease()
+                    if (progress.value < 1f) {
+                        job.cancel()
+                        scope.launch { progress.animateTo(0f, androidx.compose.animation.core.tween(200)) }
+                        onPressChanged(false)
+                    }
+                    if (!released) onPressChanged(false)
+                })
+            }
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+            androidx.compose.material3.CircularProgressIndicator(
+                progress = { progress.value }, color = P.Accent, trackColor = Color.White.copy(alpha = 0.25f),
+                strokeWidth = 3.dp, modifier = Modifier.fillMaxSize(),
+            )
+            Icon(if (progress.value >= 1f) Icons.Filled.LockOpen else Icons.Filled.Lock, null, tint = Color.White, modifier = Modifier.size(18.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Column {
+            Text("Tela travada", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            Text("Segure aqui para desbloquear", color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp)
         }
     }
 }

@@ -3,7 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var lib: Library
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("liveFormat") private var liveFormat = "ts"
+    @AppStorage("liveFormat") private var liveFormat = "m3u8"
     @AppStorage("tapSounds") private var tapSounds = true
     @State private var confirmLogout = false
 
@@ -49,13 +49,13 @@ struct SettingsView: View {
                 Section {
                     Toggle("Som ao tocar nos botões", isOn: $tapSounds)
                     Picker("Formato da TV ao vivo", selection: $liveFormat) {
-                        Text("MPEG-TS (recomendado)").tag("ts")
-                        Text("HLS (m3u8)").tag("m3u8")
+                        Text("HLS (recomendado, com telinha)").tag("m3u8")
+                        Text("MPEG-TS").tag("ts")
                     }
                 } header: {
                     Text("Reprodução")
                 } footer: {
-                    Text("Se algum canal travar ou não abrir, experimente trocar o formato.")
+                    Text("No HLS a TV ao vivo pode virar telinha flutuante. Se algum canal travar, experimente MPEG-TS.")
                 }
 
                 Section {

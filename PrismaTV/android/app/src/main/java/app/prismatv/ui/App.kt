@@ -41,6 +41,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Movie
@@ -90,7 +91,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
-fun PrismaApp(vm: AppViewModel) {
+fun PrismaApp(vm: AppViewModel, onPip: () -> Unit = {}) {
     var splash by remember { mutableStateOf(true) }
     LaunchedEffect(Unit) { delay(1500); splash = false }
     FeedbackSettings.soundsOn = vm.tapSounds
@@ -112,7 +113,16 @@ fun PrismaApp(vm: AppViewModel) {
             }
         }
         AnimatedVisibility(visible = splash, enter = fadeIn(), exit = fadeOut(tween(600))) { SplashScreen() }
-        vm.player?.let { req -> PlayerScreen(vm, req) }
+        vm.player?.let { req -> PlayerScreen(vm, req, onPip) }
+        ListMenuDialog(vm)
+        AnimatedVisibility(
+            visible = vm.toast != null && !vm.inPip,
+            enter = fadeIn() + androidx.compose.animation.slideInVertically { -it },
+            exit = fadeOut() + androidx.compose.animation.slideOutVertically { -it },
+            modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 8.dp),
+        ) {
+            vm.toast?.let { ToastBanner(it.second) }
+        }
     }
 }
 
@@ -257,6 +267,7 @@ enum class Tab(val label: String, val icon: ImageVector) {
     SERIES("Séries", Icons.Filled.VideoLibrary),
     MOVIES("Filmes", Icons.Filled.Movie),
     LIVE("TV", Icons.Filled.LiveTv),
+    LISTS("Listas", Icons.Filled.Bookmark),
     SEARCH("Buscar", Icons.Filled.Search),
 }
 
@@ -280,6 +291,7 @@ fun MainScreen(vm: AppViewModel) {
                         Tab.SERIES -> SectionScreen(vm, Kind.SERIES, isTv, open) { showSettings = true }
                         Tab.MOVIES -> SectionScreen(vm, Kind.MOVIE, isTv, open) { showSettings = true }
                         Tab.LIVE -> LiveScreen(vm, isTv)
+                        Tab.LISTS -> ListsScreen(vm, isTv, open)
                         Tab.SEARCH -> SearchScreen(vm, isTv, open)
                     }
                 }

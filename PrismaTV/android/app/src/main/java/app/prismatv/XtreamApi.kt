@@ -35,10 +35,13 @@ class XtreamApi(val account: Account) {
         }
         conn.connectTimeout = 20_000
         conn.readTimeout = 180_000
-        conn.setRequestProperty("User-Agent", "PrismaTV/1.0 (Android)")
+        conn.setRequestProperty("User-Agent", "VLC/3.0.20 LibVLC/3.0.20")
         try {
             val code = conn.responseCode
-            if (code == 401 || code == 403) throw ApiError("Usuário ou senha incorretos.")
+            if (code == 401 || code == 403 || code == 451) throw ApiError(
+                "O servidor recusou a conexão (erro $code). Alguns provedores bloqueiam acessos de fora do Brasil, " +
+                    "de VPN ou de servidores na nuvem. No seu aparelho, na internet de casa, deve funcionar."
+            )
             if (code !in 200..299) throw ApiError("O servidor respondeu com erro $code.")
             conn.inputStream.bufferedReader().use { it.readText() }
         } catch (e: ApiError) {
@@ -55,8 +58,9 @@ class XtreamApi(val account: Account) {
         val obj = try { JSONObject(text) } catch (e: Exception) {
             throw ApiError("O servidor não respondeu como um painel Xtream Codes. Confira o endereço e a porta.")
         }
-        val user = obj.optJSONObject("user_info")?.let { Parse.user(it) } ?: throw ApiError("Usuário ou senha incorretos.")
-        if (user.auth != 1) throw ApiError("Usuário ou senha incorretos.")
+        val wrong = "Usuário ou senha incorretos. Confira se digitou igual ao outro app."
+        val user = obj.optJSONObject("user_info")?.let { Parse.user(it) } ?: throw ApiError(wrong)
+        if (user.auth != 1) throw ApiError(wrong)
         val status = user.status?.lowercase(Locale.ROOT)
         if (status != null && status != "active") throw ApiError("Sua assinatura parece estar expirada ou desativada.")
         return user

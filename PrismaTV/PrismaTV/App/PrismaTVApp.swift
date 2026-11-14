@@ -48,6 +48,15 @@ struct RootView: View {
                     .zIndex(1)
             }
         }
+        .overlay(alignment: .top) {
+            if let toast = lib.toast {
+                ToastView(toast: toast)
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.9)))
+                    .id(toast.id)
+                    .zIndex(2)
+            }
+        }
         .animation(.easeInOut(duration: 0.35), value: lib.account == nil)
         .animation(.easeInOut(duration: 0.35), value: lib.isEmpty)
         .task {
@@ -108,7 +117,7 @@ struct SplashView: View {
 
 // MARK: - Abas (barra flutuante de vidro)
 
-enum AppTab: Hashable { case series, movies, live, search }
+enum AppTab: Hashable { case series, movies, live, lists, search }
 
 struct MainTabs: View {
     @State private var tab: AppTab = .series
@@ -118,6 +127,7 @@ struct MainTabs: View {
             page(.series) { SectionView(kind: .series) }
             page(.movies) { SectionView(kind: .movie) }
             page(.live) { LiveView() }
+            page(.lists) { MyListsView() }
             page(.search) { SearchView() }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -153,6 +163,7 @@ struct GlassTabBar: View {
         Item(tab: .series, title: "Séries", icon: "play.rectangle.on.rectangle.fill"),
         Item(tab: .movies, title: "Filmes", icon: "film.fill"),
         Item(tab: .live, title: "TV", icon: "tv.fill"),
+        Item(tab: .lists, title: "Listas", icon: "bookmark.fill"),
         Item(tab: .search, title: "Buscar", icon: "magnifyingglass"),
     ]
 

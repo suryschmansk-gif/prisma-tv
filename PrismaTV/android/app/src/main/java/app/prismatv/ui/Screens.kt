@@ -175,10 +175,10 @@ fun SectionScreen(vm: AppViewModel, kind: Kind, isTv: Boolean, onOpen: (MediaIte
                 }
             }
         }
-        if (favItems.isNotEmpty()) full("favs") { PosterRow("Minha lista", favItems, favs, posterWidth, onOpen) }
-        if (top.isNotEmpty()) full("top") { TopRow(if (isSeries) "Top 5 séries" else "Top 5 filmes", top, onOpen) }
+        if (favItems.isNotEmpty()) full("favs") { PosterRow("Favoritos", favItems, vm, posterWidth, onOpen) }
+        if (top.isNotEmpty()) full("top") { TopRow(if (isSeries) "Top 5 séries" else "Top 5 filmes", top, vm, onOpen) }
         if (recent.isNotEmpty()) full("recent") {
-            PosterRow(if (isSeries) "Séries atualizadas" else "Adicionados recentemente", recent, favs, posterWidth, onOpen)
+            PosterRow(if (isSeries) "Séries atualizadas" else "Adicionados recentemente", recent, vm, posterWidth, onOpen)
         }
         full("catalog-header") {
             Column(Modifier.bleed(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -210,7 +210,7 @@ fun SectionScreen(vm: AppViewModel, kind: Kind, isTv: Boolean, onOpen: (MediaIte
             }
         }
         items(results, key = { it.key }) { item ->
-            Box(Modifier.reveal()) { PosterCard(item, item.key in favs, null) { onOpen(item) } }
+            Box(Modifier.reveal()) { PosterCard(item, vm, null) { onOpen(item) } }
         }
         if (results.isEmpty()) full("empty") {
             Text("Nada encontrado. Tente outra categoria ou limpe os filtros.", color = P.Muted, fontSize = 14.sp,
@@ -280,17 +280,17 @@ private fun HeroBanner(vm: AppViewModel, item: MediaItem, entry: WatchEntry?, ti
 }
 
 @Composable
-private fun PosterRow(title: String, items: List<MediaItem>, favs: Set<String>, width: Dp, onOpen: (MediaItem) -> Unit) {
+private fun PosterRow(title: String, items: List<MediaItem>, vm: AppViewModel, width: Dp, onOpen: (MediaItem) -> Unit) {
     Column(Modifier.bleed(16.dp).reveal(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionTitle(title)
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(items, key = { it.key }) { item -> PosterCard(item, item.key in favs, width) { onOpen(item) } }
+            items(items, key = { it.key }) { item -> PosterCard(item, vm, width) { onOpen(item) } }
         }
     }
 }
 
 @Composable
-private fun TopRow(title: String, items: List<MediaItem>, onOpen: (MediaItem) -> Unit) {
+private fun TopRow(title: String, items: List<MediaItem>, vm: AppViewModel, onOpen: (MediaItem) -> Unit) {
     Column(Modifier.bleed(16.dp).reveal(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionTitle(title)
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -301,7 +301,7 @@ private fun TopRow(title: String, items: List<MediaItem>, onOpen: (MediaItem) ->
                         color = P.Accent.copy(alpha = 0.35f),
                         modifier = Modifier.offset(x = 10.dp, y = 16.dp),
                     )
-                    Pressable(onClick = { onOpen(item) }, shape = RoundedCornerShape(14.dp)) {
+                    Pressable(onClick = { onOpen(item) }, onLongClick = { vm.listMenu = item }, shape = RoundedCornerShape(14.dp)) {
                         Artwork(item.poster, item.title, Modifier.width(116.dp).aspectRatio(2f / 3f))
                     }
                 }
@@ -529,8 +529,8 @@ fun SearchScreen(vm: AppViewModel, isTv: Boolean, onOpen: (MediaItem) -> Unit) {
                 Text("Acentos e maiúsculas não importam.", color = P.Muted, fontSize = 14.sp)
             }
         } else {
-            if (found.series.isNotEmpty()) item { PosterRowPlain("Séries", found.series, vm.favorites, width, onOpen) }
-            if (found.movies.isNotEmpty()) item { PosterRowPlain("Filmes", found.movies, vm.favorites, width, onOpen) }
+            if (found.series.isNotEmpty()) item { PosterRowPlain("Séries", found.series, vm, width, onOpen) }
+            if (found.movies.isNotEmpty()) item { PosterRowPlain("Filmes", found.movies, vm, width, onOpen) }
             if (found.channels.isNotEmpty()) {
                 item { SectionTitle("Canais") }
                 itemsIndexed(found.channels, key = { _, c -> "c${c.id}" }) { i, ch ->
@@ -546,11 +546,11 @@ fun SearchScreen(vm: AppViewModel, isTv: Boolean, onOpen: (MediaItem) -> Unit) {
 }
 
 @Composable
-private fun PosterRowPlain(title: String, items: List<MediaItem>, favs: Set<String>, width: Dp, onOpen: (MediaItem) -> Unit) {
+private fun PosterRowPlain(title: String, items: List<MediaItem>, vm: AppViewModel, width: Dp, onOpen: (MediaItem) -> Unit) {
     Column(Modifier.reveal(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionTitle(title)
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(items, key = { it.key }) { item -> PosterCard(item, item.key in favs, width) { onOpen(item) } }
+            items(items, key = { it.key }) { item -> PosterCard(item, vm, width) { onOpen(item) } }
         }
     }
 }
@@ -624,6 +624,7 @@ fun DetailScreen(vm: AppViewModel, item: MediaItem, isTv: Boolean, onBack: () ->
                 } else {
                     MovieActions(vm, item, movieInfo)
                 }
+                ListButtons(vm, item.key)
                 if (genres.isNotEmpty()) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(genres) { Chip(it, false) {} } }
                 }
